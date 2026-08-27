@@ -49,7 +49,7 @@ It's an express adapter for zodios that helps you type your express routes.
 # Install
 
 ```bash
-> npm install @zodios/express
+> npm install @christensena/zodios-express
 ```
 
 or
