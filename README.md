@@ -24,6 +24,11 @@
 
 https://user-images.githubusercontent.com/633115/185851987-554f5686-cb78-4096-8ff5-c8d61b645608.mp4
 
+> [!NOTE]
+> This is a fork of [ecyrbe/zodios-express](https://github.com/ecyrbe/zodios-express), which is no longer maintained.
+> Its only goal is to get zodios working with **zod 4** while still using express. Don't expect active
+> maintenance beyond that.
+
 # What is it ?
 
 It's an express adapter for zodios that helps you type your express routes.
