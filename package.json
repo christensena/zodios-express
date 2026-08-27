@@ -1,7 +1,7 @@
 {
   "name": "@christensena/zodios-express",
   "description": "Typescript express server",
-  "version": "10.6.1",
+  "version": "11.0.0",
   "main": "lib/index.js",
   "module": "lib/index.mjs",
   "typings": "lib/index.d.ts",
