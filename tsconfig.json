@@ -9,6 +9,7 @@
     "alwaysStrict": true,
     "strict": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "sourceMap": true,
     "declaration": true
   },
