@@ -299,9 +299,8 @@ describe("router", () => {
         {
           code: "invalid_type",
           expected: "number",
-          message: "Expected number, received string",
+          message: "Invalid input: expected number, received string",
           path: [],
-          received: "string",
         },
       ],
     });
@@ -330,10 +329,10 @@ describe("router", () => {
       expect.objectContaining({
         code: "too_small",
         inclusive: true,
-        message: "Number must be greater than or equal to 1",
+        message: "Too small: expected number to be >=1",
         minimum: 1,
         path: [],
-        type: "number",
+        origin: "number",
       }),
     ]);
   });
@@ -376,9 +375,11 @@ describe("router", () => {
       context: "body",
       error: [
         {
-          validation: "email",
-          code: "invalid_string",
-          message: "Invalid email",
+          code: "invalid_format",
+          format: "email",
+          origin: "string",
+          message: "Invalid email address",
+          pattern: expect.any(String),
           path: ["email"],
         },
       ],
