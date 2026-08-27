@@ -11,7 +11,7 @@ const METHODS = ["get", "post", "put", "patch", "delete"] as const;
 
 async function validateParam(schema: z.ZodType<any>, parameter: unknown) {
   if (
-    !isZodType(schema, z.ZodFirstPartyTypeKind.ZodString) &&
+    !isZodType(schema, "string") &&
     parameter &&
     typeof parameter === "string"
   ) {
