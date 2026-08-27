@@ -420,3 +420,329 @@ describe("router", () => {
     expect(result.status).toBe(400);
   });
 });
+
+const zod4Api = apiBuilder({
+  method: "get",
+  path: "/search",
+  parameters: [
+    {
+      name: "flag",
+      type: "Query",
+      schema: z.stringbool(),
+    },
+    {
+      name: "since",
+      type: "Query",
+      schema: z.iso.datetime().optional(),
+    },
+    {
+      name: "page",
+      type: "Query",
+      schema: z.coerce.number().optional(),
+    },
+    {
+      name: "tag",
+      type: "Query",
+      schema: z
+        .string()
+        .refine((s) => s !== "forbidden")
+        .optional(),
+    },
+    {
+      name: "limit",
+      type: "Query",
+      schema: z.number().min(1).default(0),
+    },
+  ],
+  response: z.any(),
+})
+  .addEndpoint({
+    method: "get",
+    path: "/prefault",
+    parameters: [
+      {
+        name: "limit",
+        type: "Query",
+        schema: z.number().min(1).prefault(0),
+      },
+    ],
+    response: z.any(),
+  })
+  .addEndpoint({
+    method: "get",
+    path: "/items/:id",
+    parameters: [
+      {
+        name: "id",
+        type: "Path",
+        schema: z.int(),
+      },
+    ],
+    response: z.any(),
+  })
+  .addEndpoint({
+    method: "post",
+    path: "/strict-items",
+    parameters: [
+      {
+        name: "item",
+        type: "Body",
+        schema: z.strictObject({
+          name: z.string(),
+          email: z.email(),
+        }),
+      },
+    ],
+    response: z.any(),
+  })
+  .addEndpoint({
+    method: "post",
+    path: "/loose-items",
+    parameters: [
+      {
+        name: "item",
+        type: "Body",
+        schema: z.looseObject({
+          name: z.string(),
+        }),
+      },
+    ],
+    response: z.any(),
+  })
+  .addEndpoint({
+    method: "put",
+    path: "/profile",
+    parameters: [
+      {
+        name: "profile",
+        type: "Body",
+        schema: z
+          .object({
+            name: z.string(),
+          })
+          .transform((o) => ({ ...o, name: o.name.toUpperCase() })),
+      },
+      {
+        name: "Authorization",
+        type: "Header",
+        schema: z.templateLiteral(["Bearer ", z.string().regex(/^[a-z0-9]+$/)]),
+      },
+    ],
+    response: z.any(),
+  })
+  .build();
+
+function makeZod4App(transform: boolean) {
+  const app = zodiosContext().app(zod4Api, { transform });
+  app.get("/search", (req, res) => {
+    res.json({ query: req.query, flagType: typeof req.query.flag });
+  });
+  app.get("/prefault", (req, res) => {
+    res.json({ limit: req.query.limit });
+  });
+  app.get("/items/:id", (req, res) => {
+    res.json({ id: req.params.id });
+  });
+  app.post("/strict-items", (req, res) => {
+    res.json(req.body);
+  });
+  app.post("/loose-items", (req, res) => {
+    res.json(req.body);
+  });
+  app.put("/profile", (req, res) => {
+    res.json(req.body);
+  });
+  return app;
+}
+
+describe("zod 4", () => {
+  describe("z.stringbool", () => {
+    it("should keep the raw string when transform is disabled (pipe is stripped)", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes")
+        .expect(200);
+      expect(result.body.query.flag).toBe("yes");
+      expect(result.body.flagType).toBe("string");
+    });
+
+    it("should parse to a boolean when transform is enabled", async () => {
+      const result = await request(makeZod4App(true))
+        .get("/search?flag=yes")
+        .expect(200);
+      expect(result.body.query.flag).toBe(true);
+      expect(result.body.flagType).toBe("boolean");
+    });
+
+    it("should reject invalid values when transform is enabled", async () => {
+      const result = await request(makeZod4App(true))
+        .get("/search?flag=maybe")
+        .expect(400);
+      expect(result.body.context).toBe("query.flag");
+      expect(result.body.error[0].code).toBe("invalid_value");
+    });
+  });
+
+  describe("string formats", () => {
+    it("should accept a valid z.iso.datetime query param", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes&since=2026-01-15T10:00:00Z")
+        .expect(200);
+      expect(result.body.query.since).toBe("2026-01-15T10:00:00Z");
+    });
+
+    it("should reject an invalid z.iso.datetime query param", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes&since=not-a-date")
+        .expect(400);
+      expect(result.body.context).toBe("query.since");
+      expect(result.body.error[0].code).toBe("invalid_format");
+    });
+
+    it("should reject an invalid z.email body field", async () => {
+      const result = await request(makeZod4App(false))
+        .post("/strict-items")
+        .send({ name: "widget", email: "not-an-email" })
+        .expect(400);
+      expect(result.body.error[0]).toMatchObject({
+        code: "invalid_format",
+        format: "email",
+        path: ["email"],
+      });
+    });
+  });
+
+  describe("coercion and numeric formats", () => {
+    it("should coerce a numeric query param with z.coerce.number", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes&page=2")
+        .expect(200);
+      expect(result.body.query.page).toBe(2);
+    });
+
+    it("should accept an integer path param with z.int", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/items/42")
+        .expect(200);
+      expect(result.body.id).toBe(42);
+    });
+
+    it("should reject a non-integer path param with z.int", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/items/4.2")
+        .expect(400);
+      expect(result.body.context).toBe("path.id");
+      expect(result.body.error[0]).toMatchObject({
+        code: "invalid_type",
+        expected: "int",
+      });
+    });
+  });
+
+  describe("refinements", () => {
+    // zod 4 refinements no longer wrap the schema, so unlike zod 3 they
+    // survive transform stripping and are enforced in no-transform mode
+    it("should enforce refinements even when transform is disabled", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes&tag=forbidden")
+        .expect(400);
+      expect(result.body.context).toBe("query.tag");
+      expect(result.body.error[0].code).toBe("custom");
+    });
+
+    it("should accept values passing the refinement", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes&tag=allowed")
+        .expect(200);
+      expect(result.body.query.tag).toBe("allowed");
+    });
+  });
+
+  describe("default and prefault", () => {
+    it("should short-circuit .default() without validating it", async () => {
+      // default(0) violates min(1) but zod 4 returns defaults unvalidated
+      const result = await request(makeZod4App(false))
+        .get("/search?flag=yes")
+        .expect(200);
+      expect(result.body.query.limit).toBe(0);
+    });
+
+    it("should validate .prefault() values through the schema", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/prefault")
+        .expect(400);
+      expect(result.body.context).toBe("query.limit");
+      expect(result.body.error[0].code).toBe("too_small");
+    });
+
+    it("should accept explicit values on a prefault param", async () => {
+      const result = await request(makeZod4App(false))
+        .get("/prefault?limit=5")
+        .expect(200);
+      expect(result.body.limit).toBe(5);
+    });
+  });
+
+  describe("strict and loose objects", () => {
+    it("should reject unrecognized keys with z.strictObject", async () => {
+      const result = await request(makeZod4App(false))
+        .post("/strict-items")
+        .send({ name: "widget", email: "a@b.com", extra: 1 })
+        .expect(400);
+      expect(result.body.error[0]).toMatchObject({
+        code: "unrecognized_keys",
+        keys: ["extra"],
+      });
+    });
+
+    it("should preserve unknown keys with z.looseObject", async () => {
+      const result = await request(makeZod4App(false))
+        .post("/loose-items")
+        .send({ name: "widget", extra: 1 })
+        .expect(200);
+      expect(result.body).toEqual({ name: "widget", extra: 1 });
+    });
+  });
+
+  describe("transforms", () => {
+    it("should not apply body transforms when transform is disabled", async () => {
+      const result = await request(makeZod4App(false))
+        .put("/profile")
+        .set("Authorization", "Bearer abc123")
+        .send({ name: "john" })
+        .expect(200);
+      expect(result.body).toEqual({ name: "john" });
+    });
+
+    it("should apply body transforms when transform is enabled", async () => {
+      const result = await request(makeZod4App(true))
+        .put("/profile")
+        .set("Authorization", "Bearer abc123")
+        .send({ name: "john" })
+        .expect(200);
+      expect(result.body).toEqual({ name: "JOHN" });
+    });
+  });
+
+  describe("z.templateLiteral", () => {
+    it("should accept a matching header", async () => {
+      await request(makeZod4App(false))
+        .put("/profile")
+        .set("Authorization", "Bearer abc123")
+        .send({ name: "john" })
+        .expect(200);
+    });
+
+    it("should reject a non-matching header", async () => {
+      const result = await request(makeZod4App(false))
+        .put("/profile")
+        .set("Authorization", "Token abc123")
+        .send({ name: "john" })
+        .expect(400);
+      expect(result.body.context).toBe("header.Authorization");
+      expect(result.body.error[0]).toMatchObject({
+        code: "invalid_format",
+        format: "template_literal",
+      });
+    });
+  });
+});
